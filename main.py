@@ -15,6 +15,8 @@ class FinancialState(TypedDict):
     date: str
     exchange_rates: dict
     gold_price: dict
+    location: dict
+    weather: dict
     output: str
 
 
@@ -123,11 +125,53 @@ def fetch_gold_price(state: FinancialState) -> dict:
     return {"gold_price": {"price_per_ounce": "N/A", "currency": "USD"}}
 
 
+def fetch_location(state: FinancialState) -> dict:
+    """Node: Detect user's approximate location via IP (no auth)."""
+    try:
+        # Free IP geolocation (no auth). Rate-limited but fine for simple CLI.
+        resp = requests.get("http://ip-api.com/json/", timeout=10)
+        if resp.status_code == 200:
+            data = resp.json()
+            city = data.get("city", "Unknown")
+            country = data.get("country", "Unknown")
+            lat = data.get("lat", None)
+            lon = data.get("lon", None)
+            return {"location": {"city": city, "country": country, "lat": lat, "lon": lon}}
+    except Exception as e:
+        print(f"Warning: Could not detect location: {e}")
+    return {"location": {"city": "Unknown", "country": "Unknown", "lat": None, "lon": None}}
+
+
+def fetch_weather(state: FinancialState) -> dict:
+    """Node: Fetch live temperature using Open-Meteo with detected lat/lon."""
+    loc = state.get("location", {})
+    lat = loc.get("lat")
+    lon = loc.get("lon")
+    if lat is None or lon is None:
+        return {"weather": {"temperature_c": "N/A"}}
+    try:
+        url = (
+            f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}"
+            f"&current=temperature_2m&timezone=auto"
+        )
+        resp = requests.get(url, timeout=10)
+        if resp.status_code == 200:
+            data = resp.json()
+            current = data.get("current", {})
+            temp_c = current.get("temperature_2m", "N/A")
+            return {"weather": {"temperature_c": temp_c}}
+    except Exception as e:
+        print(f"Warning: Could not fetch weather: {e}")
+    return {"weather": {"temperature_c": "N/A"}}
+
+
 def compile_output(state: FinancialState) -> dict:
     """Node: Compile and format all fetched data into a readable output."""
     date = state["date"]
     rates = state.get("exchange_rates", {})
     gold = state.get("gold_price", {})
+    loc = state.get("location", {})
+    weather = state.get("weather", {})
     
     gold_note = f" ({gold.get('note', '')})" if gold.get('note') else ""
     
@@ -136,6 +180,10 @@ def compile_output(state: FinancialState) -> dict:
 FINANCIAL INSIGHTS REPORT
 {'='*60}
 Date: {date}
+
+LOCATION & WEATHER:
+  City, Country: {loc.get('city', 'Unknown')}, {loc.get('country', 'Unknown')}
+  Live Temperature: {weather.get('temperature_c', 'N/A')} °C
 
 EXCHANGE RATES (USD Base):
   USD to EUR: {rates.get('EUR', 'N/A')}
@@ -163,6 +211,8 @@ def build_graph():
     
     # Add nodes
     workflow.add_node("get_date", get_user_date)
+    workflow.add_node("fetch_location", fetch_location)
+    workflow.add_node("fetch_weather", fetch_weather)
     workflow.add_node("fetch_exchange", fetch_exchange_rates)
     workflow.add_node("fetch_gold", fetch_gold_price)
     workflow.add_node("compile", compile_output)
@@ -171,11 +221,15 @@ def build_graph():
     # Define the graph flow
     workflow.set_entry_point("get_date")
     
-    # After getting date, fetch both exchange rates and gold in parallel
-    workflow.add_edge("get_date", "fetch_exchange")
-    workflow.add_edge("get_date", "fetch_gold")
+    # After getting date, get location -> weather; then fetch finance data
+    workflow.add_edge("get_date", "fetch_location")
+    workflow.add_edge("fetch_location", "fetch_weather")
     
-    # Both fetch nodes go to compile (compile will only run after both complete)
+    # After weather, fetch exchange and gold in parallel
+    workflow.add_edge("fetch_weather", "fetch_exchange")
+    workflow.add_edge("fetch_weather", "fetch_gold")
+    
+    # When both finance fetches complete, compile
     workflow.add_edge("fetch_exchange", "compile")
     workflow.add_edge("fetch_gold", "compile")
     
