@@ -2,7 +2,7 @@
 
 # Virtual Businessman - Financial Insights Application
 
-A simple console-based Python application that provides historical financial insights using LangGraph. The application fetches exchange rates and gold prices for any given date.
+A console-based Python application that provides historical financial insights using LangGraph. The application fetches exchange rates and gold prices for any given date.
 
 </div>
 
