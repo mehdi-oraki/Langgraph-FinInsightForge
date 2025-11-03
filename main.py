@@ -12,33 +12,40 @@ from datetime import datetime
 
 class FinancialState(TypedDict):
     """State structure for the financial insights graph."""
-    date: str
-    exchange_rates: dict
-    gold_price: dict
+    date1: str
+    date2: str
+    exchange_rates1: dict
+    exchange_rates2: dict
+    gold_price1: dict
+    gold_price2: dict
     location: dict
     weather: dict
     output: str
 
 
 def get_user_date(state: FinancialState) -> dict:
-    """Node: Prompt user for date input."""
+    """Node: Prompt user for two date inputs."""
     print("\n" + "="*60)
     print("Virtual Businessman - Financial Insights")
     print("="*60)
-    date_str = input("Enter a date (YYYY-MM-DD format): ").strip()
+    date1 = input("Enter start date (YYYY-MM-DD): ").strip()
+    date2 = input("Enter end date   (YYYY-MM-DD): ").strip()
     
     # Validate date format
     try:
-        datetime.strptime(date_str, "%Y-%m-%d")
-        return {"date": date_str}
+        datetime.strptime(date1, "%Y-%m-%d")
     except ValueError:
-        print("Invalid date format. Using today's date as fallback.")
-        return {"date": datetime.now().strftime("%Y-%m-%d")}
+        print("Invalid start date. Using today's date.")
+        date1 = datetime.now().strftime("%Y-%m-%d")
+    try:
+        datetime.strptime(date2, "%Y-%m-%d")
+    except ValueError:
+        print("Invalid end date. Using today's date.")
+        date2 = datetime.now().strftime("%Y-%m-%d")
+    return {"date1": date1, "date2": date2}
 
 
-def fetch_exchange_rates(state: FinancialState) -> dict:
-    """Node: Fetch historical exchange rates for the given date."""
-    date = state["date"]
+def _fetch_exchange_for_date(date: str) -> dict:
     
     # Using fawazahmed0/currency-api (completely free, open source, no auth required)
     try:
@@ -75,9 +82,21 @@ def fetch_exchange_rates(state: FinancialState) -> dict:
     return {"exchange_rates": {"EUR": "N/A", "GBP": "N/A", "JPY": "N/A"}}
 
 
-def fetch_gold_price(state: FinancialState) -> dict:
-    """Node: Fetch gold price per ounce for the given date."""
-    date = state["date"]
+def fetch_exchange_1(state: FinancialState) -> dict:
+    """Node: Fetch exchange rates for date1."""
+    date = state["date1"]
+    res = _fetch_exchange_for_date(date)
+    return {"exchange_rates1": res.get("exchange_rates", {})}
+
+
+def fetch_exchange_2(state: FinancialState) -> dict:
+    """Node: Fetch exchange rates for date2."""
+    date = state["date2"]
+    res = _fetch_exchange_for_date(date)
+    return {"exchange_rates2": res.get("exchange_rates", {})}
+
+
+def _fetch_gold_for_date(date: str) -> dict:
     
     try:
         # Using fawazahmed0/currency-api for gold (XAU - Gold ounce)
@@ -125,6 +144,20 @@ def fetch_gold_price(state: FinancialState) -> dict:
     return {"gold_price": {"price_per_ounce": "N/A", "currency": "USD"}}
 
 
+def fetch_gold_1(state: FinancialState) -> dict:
+    """Node: Fetch gold price for date1."""
+    date = state["date1"]
+    res = _fetch_gold_for_date(date)
+    return {"gold_price1": res.get("gold_price", {})}
+
+
+def fetch_gold_2(state: FinancialState) -> dict:
+    """Node: Fetch gold price for date2."""
+    date = state["date2"]
+    res = _fetch_gold_for_date(date)
+    return {"gold_price2": res.get("gold_price", {})}
+
+
 def fetch_location(state: FinancialState) -> dict:
     """Node: Detect user's approximate location via IP (no auth)."""
     try:
@@ -167,31 +200,51 @@ def fetch_weather(state: FinancialState) -> dict:
 
 def compile_output(state: FinancialState) -> dict:
     """Node: Compile and format all fetched data into a readable output."""
-    date = state["date"]
-    rates = state.get("exchange_rates", {})
-    gold = state.get("gold_price", {})
+    date1 = state["date1"]
+    date2 = state["date2"]
+    rates1 = state.get("exchange_rates1", {})
+    rates2 = state.get("exchange_rates2", {})
+    gold1 = state.get("gold_price1", {})
+    gold2 = state.get("gold_price2", {})
     loc = state.get("location", {})
     weather = state.get("weather", {})
     
-    gold_note = f" ({gold.get('note', '')})" if gold.get('note') else ""
+    def pct(old, new):
+        try:
+            if old in ("N/A", None) or new in ("N/A", None):
+                return "N/A"
+            old_v = float(old)
+            new_v = float(new)
+            if old_v == 0:
+                return "N/A"
+            return f"{((new_v - old_v) / old_v) * 100:.2f}%"
+        except Exception:
+            return "N/A"
+
+    gold_note1 = f" ({gold1.get('note', '')})" if gold1.get('note') else ""
+    gold_note2 = f" ({gold2.get('note', '')})" if gold2.get('note') else ""
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
     output = f"""
 {'='*60}
 FINANCIAL INSIGHTS REPORT
 {'='*60}
-Date: {date}
+Dates: {date1} → {date2}
 
 LOCATION & WEATHER:
   City, Country: {loc.get('city', 'Unknown')}, {loc.get('country', 'Unknown')}
   Live Temperature: {weather.get('temperature_c', 'N/A')} °C
+  Now: {now_str}
 
 EXCHANGE RATES (USD Base):
-  USD to EUR: {rates.get('EUR', 'N/A')}
-  USD to GBP: {rates.get('GBP', 'N/A')}
-  USD to JPY: {rates.get('JPY', 'N/A')}
+  Date {date1}  | EUR: {rates1.get('EUR', 'N/A')}  GBP: {rates1.get('GBP', 'N/A')}  JPY: {rates1.get('JPY', 'N/A')}
+  Date {date2}  | EUR: {rates2.get('EUR', 'N/A')}  GBP: {rates2.get('GBP', 'N/A')}  JPY: {rates2.get('JPY', 'N/A')}
+  Change (%)   | EUR: {pct(rates1.get('EUR'), rates2.get('EUR'))}  GBP: {pct(rates1.get('GBP'), rates2.get('GBP'))}  JPY: {pct(rates1.get('JPY'), rates2.get('JPY'))}
 
-GOLD PRICE:
-  Price per Ounce: ${gold.get('price_per_ounce', 'N/A')} {gold.get('currency', 'USD')}{gold_note}
+GOLD PRICE (USD/oz):
+  Date {date1}: ${gold1.get('price_per_ounce', 'N/A')} {gold1.get('currency', 'USD')}{gold_note1}
+  Date {date2}: ${gold2.get('price_per_ounce', 'N/A')} {gold2.get('currency', 'USD')}{gold_note2}
+  Change (%): {pct(gold1.get('price_per_ounce'), gold2.get('price_per_ounce'))}
 
 {'='*60}
 """
@@ -213,8 +266,10 @@ def build_graph():
     workflow.add_node("get_date", get_user_date)
     workflow.add_node("fetch_location", fetch_location)
     workflow.add_node("fetch_weather", fetch_weather)
-    workflow.add_node("fetch_exchange", fetch_exchange_rates)
-    workflow.add_node("fetch_gold", fetch_gold_price)
+    workflow.add_node("fetch_exchange_1", fetch_exchange_1)
+    workflow.add_node("fetch_exchange_2", fetch_exchange_2)
+    workflow.add_node("fetch_gold_1", fetch_gold_1)
+    workflow.add_node("fetch_gold_2", fetch_gold_2)
     workflow.add_node("compile", compile_output)
     workflow.add_node("display", display_results)
     
@@ -225,13 +280,12 @@ def build_graph():
     workflow.add_edge("get_date", "fetch_location")
     workflow.add_edge("fetch_location", "fetch_weather")
     
-    # After weather, fetch exchange and gold in parallel
-    workflow.add_edge("fetch_weather", "fetch_exchange")
-    workflow.add_edge("fetch_weather", "fetch_gold")
-    
-    # When both finance fetches complete, compile
-    workflow.add_edge("fetch_exchange", "compile")
-    workflow.add_edge("fetch_gold", "compile")
+    # After weather, fetch finance data sequentially for simplicity
+    workflow.add_edge("fetch_weather", "fetch_exchange_1")
+    workflow.add_edge("fetch_exchange_1", "fetch_exchange_2")
+    workflow.add_edge("fetch_exchange_2", "fetch_gold_1")
+    workflow.add_edge("fetch_gold_1", "fetch_gold_2")
+    workflow.add_edge("fetch_gold_2", "compile")
     
     # Display results and end
     workflow.add_edge("compile", "display")
