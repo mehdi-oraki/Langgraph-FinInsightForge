@@ -164,7 +164,7 @@ Potential improvements could include:
 
 ## License
 
-This project is provided as-is for educational purposes.
+This project is licensed under the **MIT License**. See the [LICENSE](LICENSE) file for details.
 
 ## Author
 
